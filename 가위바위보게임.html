@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>반응형 가위바위보 게임</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Malgun Gothic', sans-serif;
+            background-color: #f5f7fa;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .game-card {
+            background-color: #ffffff;
+            border-radius: 15px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+            width: 100%;
+            max-width: 500px;
+            text-align: center;
+        }
+
+        .title {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 25px;
+        }
+
+        .btn-container {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-bottom: 25px;
+        }
+
+        .btn {
+            flex: 1;
+            max-width: 150px;
+            padding: 12px 0;
+            font-size: 1.1rem;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+
+        .start-btn {
+            background-color: #2ecc71;
+            color: white;
+        }
+
+        .start-btn:hover:not(:disabled) {
+            background-color: #27ae60;
+        }
+
+        .stop-btn {
+            background-color: #e74c3c;
+            color: white;
+        }
+
+        .stop-btn:hover:not(:disabled) {
+            background-color: #c0392b;
+        }
+
+        /* 비활성화(disabled) 상태일 때의 기초 스타일 */
+        .btn:disabled {
+            background-color: #d6dbdf !important;
+            color: #7f8c8d !important;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        #webcam-container {
+            margin: 0 auto 25px auto;
+            border: 5px solid #eceff1;
+            border-radius: 12px;
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            max-width: 350px;
+            background-color: #e0e0e0;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #webcam-container canvas {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover;
+        }
+
+        #result-container {
+            font-size: 2.5rem;
+            font-weight: 800;
+            color: #3498db;
+            margin-top: 15px;
+            min-height: 60px;
+            word-break: keep-all;
+        }
+
+        @media (max-width: 400px) {
+            .game-card {
+                padding: 20px 15px;
+            }
+            .title {
+                font-size: 1.6rem;
+            }
+            .btn {
+                font-size: 1rem;
+                padding: 10px 0;
+            }
+            #result-container {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="game-card">
+        <div class="title">가위바위보 게임</div>
+        
+        <div class="btn-container">
+            <button type="button" id="start-btn" class="btn start-btn" onclick="init()">시작</button>
+            <button type="button" id="stop-btn" class="btn stop-btn" onclick="stopGame()" disabled>중지</button>
+        </div>
+        
+        <div id="webcam-container"></div>
+        <div id="result-container">준비 완료</div>
+    </div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+<script type="text/javascript">
+    const URL = "https://teachablemachine.withgoogle.com/models/w1zgnmOvc9/";
+
+    let model, webcam, resultContainer, maxPredictions;
+    let predictionInterval;
+    let isPlaying = false;
+
+    // 버튼 엘리먼트 가져오기 편리하도록 변수 선언
+    let startBtn, stopBtn;
+
+    async function init() {
+        if (isPlaying) return; 
+
+        startBtn = document.getElementById("start-btn");
+        stopBtn = document.getElementById("stop-btn");
+        resultContainer = document.getElementById("result-container");
+        
+        // 로딩 중에는 두 버튼 모두 잠시 비활성화
+        startBtn.disabled = true;
+        stopBtn.disabled = true;
+        resultContainer.innerHTML = "로딩 중...";
+
+        if (!model) {
+            const modelURL = URL + "model.json";
+            const metadataURL = URL + "metadata.json";
+            model = await tmImage.load(modelURL, metadataURL);
+            maxPredictions = model.getTotalClasses();
+        }
+
+        if (!webcam) {
+            const flip = true; 
+            webcam = new tmImage.Webcam(400, 400, flip); 
+            await webcam.setup(); 
+            document.getElementById("webcam-container").appendChild(webcam.canvas);
+            window.requestAnimationFrame(loop);
+        }
+
+        await webcam.play();
+        isPlaying = true;
+
+        predictionInterval = setInterval(predict, 500);
+        resultContainer.innerHTML = "시작!";
+
+        // 게임이 시작되었으므로 [중지] 버튼만 활성화
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+    }
+
+    async function loop() {
+        webcam.update(); 
+        window.requestAnimationFrame(loop);
+    }
+
+    function stopGame() {
+        if (!isPlaying) return; 
+
+        clearInterval(predictionInterval);
+        
+        if (webcam) {
+            webcam.pause();
+        }
+
+        isPlaying = false;
+        resultContainer.innerHTML = "중지됨";
+
+        // 게임이 멈췄으므로 [시작] 버튼만 활성화
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+    }
+
+    async function predict() {
+        if (!isPlaying) return;
+
+        const prediction = await model.predict(webcam.canvas);
+        
+        let highestClassName = "";
+        let highestProbability = 0;
+
+        for (let i = 0; i < maxPredictions; i++) {
+            if (prediction[i].probability > highestProbability) {
+                highestProbability = prediction[i].probability;
+                highestClassName = prediction[i].className;
+            }
+        }
+
+        if (highestClassName) {
+            resultContainer.innerHTML = highestClassName;
+        }
+    }
+</script>
+
+</body>
+</html>
